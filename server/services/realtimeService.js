@@ -14,7 +14,13 @@ const jwt = require('jsonwebtoken');
 const { db } = require('../db');
 const { isSupabaseConfigured, getSupabaseClient, getSupabaseAdmin } = require('../supabase');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'kola_express_secret_jwt_key_2026';
+function getAuthVerifier() {
+  try {
+    return require('../routes/auth').verifyToken;
+  } catch (_) {
+    return (t) => jwt.verify(t, process.env.JWT_SECRET || 'kola_express_secret_jwt_key_2026');
+  }
+}
 
 class DeliveryRealtimeService extends EventEmitter {
   constructor() {
@@ -479,7 +485,8 @@ class DeliveryRealtimeService extends EventEmitter {
 
     let user = null;
     try {
-      user = jwt.verify(token, JWT_SECRET);
+      const verifier = getAuthVerifier();
+      user = verifier(token);
     } catch (err) {
       return res.status(403).json({ error: 'Invalid or expired token for real-time stream' });
     }

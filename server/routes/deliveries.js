@@ -7,15 +7,16 @@ const googleMapsService = require('../services/googleMapsService');
 const { sanitizeAndValidateUgandaPhone } = require('../paymentGateway');
 const realtimeService = require('../services/realtimeService');
 const jwt = require('jsonwebtoken');
-const { authenticateToken, JWT_SECRET } = require('./auth');
+const { authenticateToken, verifyToken, JWT_SECRET } = require('./auth');
 
 // Helper to optionally parse user token if present
 function optionalAuth(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   if (token) {
-    jwt.verify(token, JWT_SECRET, (err, decodedUser) => {
-      if (!err && decodedUser) {
+    try {
+      const decodedUser = typeof verifyToken === 'function' ? verifyToken(token) : jwt.verify(token, JWT_SECRET);
+      if (decodedUser) {
         let dbUser = null;
         if (decodedUser.id) {
           dbUser = db.prepare('SELECT id, full_name, phone, email, role, admin_role, is_active FROM users WHERE id = ?').get(decodedUser.id);
@@ -37,11 +38,11 @@ function optionalAuth(req, res, next) {
           };
         }
       }
-      next();
-    });
-  } else {
-    next();
+    } catch (_) {
+      // Gracefully continue without failing on expired or invalid token in optionalAuth
+    }
   }
+  next();
 }
 
 // Generate unique tracking number e.g. KOLA-20261005-123456
@@ -168,8 +169,8 @@ router.post('/quote', async (req, res) => {
   }
 });
 
-// 2. Create Delivery Request (Requires registered / authenticated user)
-router.post('/', authenticateToken, async (req, res) => {
+// 2. Create Delivery Request (Accepts authenticated user or self-heals by sender phone)
+router.post('/', optionalAuth, async (req, res) => {
   try {
     if (req.user && req.user.role === 'courier') {
       return res.status(403).json({ error: 'Courier accounts are restricted from submitting customer delivery requests.' });

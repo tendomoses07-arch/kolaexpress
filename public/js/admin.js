@@ -53,7 +53,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-
+  window.addEventListener('kola:session-expired', () => {
+    checkAdminAuth();
+  });
 
   // Admin Login Form
   const loginForm = document.getElementById('adminLoginForm');

@@ -345,6 +345,54 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 100);
   }
 
+  // Handle automatic session expiration without destroying user form inputs
+  function handleSessionExpired(reason) {
+    window.kolaApi.auth.logout();
+    window.kolaApi.realtime.disconnect();
+    isRealtimeManagerInitialized = false;
+
+    // Reset gate form error state
+    const gateLoginErr = document.getElementById('gateLoginError');
+    if (gateLoginErr) {
+      gateLoginErr.textContent = '';
+      gateLoginErr.style.display = 'none';
+    }
+    const gateLoginBtn = document.getElementById('gateLoginSubmitBtn');
+    if (gateLoginBtn) {
+      gateLoginBtn.disabled = false;
+      gateLoginBtn.innerHTML = '<span>Log In &amp; Access Kola Express →</span>';
+    }
+
+    if (typeof showGateLoginTab === 'function') {
+      showGateLoginTab();
+    }
+
+    showToast(reason || 'Your session has expired. Please log in again to continue.', 'warning');
+    checkAuthAndEnforceGate();
+  }
+
+  // Asynchronously validate stored token with backend
+  async function validateStoredSession() {
+    const token = window.kolaApi.auth.getToken();
+    if (!token) return;
+    try {
+      const res = await window.kolaApi.auth.me();
+      if (res && res.user) {
+        window.kolaApi.auth.setUser(res.user);
+      }
+    } catch (err) {
+      if (err.status === 401 || err.status === 403) {
+        console.warn('[Auth] Stored session invalid or expired, resetting access gate:', err.message);
+        handleSessionExpired(err.message || 'Your session has expired. Please log in again.');
+      }
+    }
+  }
+
+  // Listen for session expired events from api.js
+  window.addEventListener('kola:session-expired', (e) => {
+    handleSessionExpired(e.detail?.error);
+  });
+
   // Global helper on window - defined early to guarantee availability across all components
   window.kolaApp = {
     showToast,
@@ -356,6 +404,8 @@ document.addEventListener('DOMContentLoaded', () => {
     checkAuthAndEnforceGate,
     checkActiveSenderHandovers,
     handleLogout,
+    handleSessionExpired,
+    validateStoredSession,
     refreshCourierTasks() {
       if (typeof loadCourierTasks === 'function') loadCourierTasks();
     },
@@ -1857,6 +1907,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (err.data && err.data.ambiguous) {
           openAmbiguityModal(err.data);
           showToast(err.data.error || 'Please clarify your address', 'warning');
+        } else if (err.status === 401 || err.status === 403) {
+          showToast('Session expired. Please log in again to confirm your delivery.', 'warning');
+          checkAuthAndEnforceGate();
         } else {
           showToast(err.message, 'error');
         }
@@ -3659,6 +3712,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Enforce access gate on initial page load
   const isInitiallyAuthenticated = checkAuthAndEnforceGate();
   if (isInitiallyAuthenticated) {
+    validateStoredSession();
     const user = window.kolaApi.auth.getUser();
     initRealtimeManager();
     if (user?.role === 'courier') {

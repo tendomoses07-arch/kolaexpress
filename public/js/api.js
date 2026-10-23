@@ -49,6 +49,26 @@ async function request(endpoint, options = {}) {
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
+    const errorMsg = (data.error || '').toLowerCase();
+    const isAuthTokenFailure = response.status === 401 || (response.status === 403 && (
+      errorMsg.includes('token') ||
+      errorMsg.includes('expired') ||
+      errorMsg.includes('session') ||
+      errorMsg.includes('deactivated')
+    ));
+
+    if (isAuthTokenFailure && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/register')) {
+      // Clear stale, invalid, or expired session data so user is not permanently stuck
+      setStoredToken(null);
+      setStoredUser(null);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('kola:session-expired', { detail: { error: data.error, status: response.status } }));
+        if (window.kolaApp && typeof window.kolaApp.handleSessionExpired === 'function') {
+          window.kolaApp.handleSessionExpired(data.error);
+        }
+      }
+    }
+
     const error = new Error(data.error || `Request failed with status ${response.status}`);
     error.data = data;
     error.status = response.status;
@@ -85,6 +105,8 @@ const api = {
       setStoredToken(null);
       setStoredUser(null);
     },
+    setUser: setStoredUser,
+    setToken: setStoredToken,
     getUser: getStoredUser,
     getToken: getStoredToken,
     async sendVerificationCode(email) {

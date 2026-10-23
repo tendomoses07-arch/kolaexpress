@@ -18,6 +18,22 @@ if (!JWT_SECRET || JWT_SECRET === 'kola_express_secret_jwt_key_2026') {
   }
 }
 
+const LEGACY_JWT_SECRET = 'kola_express_secret_jwt_key_2026';
+
+// Helper to verify tokens with backward compatibility for sessions signed prior to key rotation
+function verifyToken(token) {
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch (err) {
+    if (JWT_SECRET !== LEGACY_JWT_SECRET) {
+      try {
+        return jwt.verify(token, LEGACY_JWT_SECRET);
+      } catch (_) {}
+    }
+    throw err;
+  }
+}
+
 // Middleware for authenticating requests
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
@@ -27,9 +43,13 @@ function authenticateToken(req, res, next) {
     return res.status(401).json({ error: 'Access token required' });
   }
 
-  jwt.verify(token, JWT_SECRET, (err, decodedUser) => {
-    if (err) return res.status(403).json({ error: 'Invalid or expired token' });
-    if (!decodedUser) return res.status(401).json({ error: 'Malformed authentication token' });
+  let decodedUser;
+  try {
+    decodedUser = verifyToken(token);
+  } catch (err) {
+    return res.status(403).json({ error: 'Invalid or expired token' });
+  }
+  if (!decodedUser) return res.status(401).json({ error: 'Malformed authentication token' });
 
     // Look up user in database by ID, or fallback to phone / email
     let dbUser = null;
@@ -79,7 +99,6 @@ function authenticateToken(req, res, next) {
     };
 
     next();
-  });
 }
 
 // Middleware for Admin only (any administrative role)
@@ -385,7 +404,7 @@ router.post('/send-verification-code', async (req, res) => {
     if (!email && req.headers['authorization']) {
       try {
         const token = req.headers['authorization'].split(' ')[1];
-        const decoded = jwt.verify(token, JWT_SECRET);
+        const decoded = verifyToken(token);
         if (decoded && decoded.email) email = decoded.email.toLowerCase();
       } catch (_) {}
     }
@@ -450,7 +469,7 @@ router.post('/verify-email', (req, res) => {
     if (!email && req.headers['authorization']) {
       try {
         const token = req.headers['authorization'].split(' ')[1];
-        const decoded = jwt.verify(token, JWT_SECRET);
+        const decoded = verifyToken(token);
         if (decoded && decoded.email) email = decoded.email.toLowerCase();
       } catch (_) {}
     }
@@ -767,6 +786,7 @@ router.post('/reset-password', async (req, res) => {
 module.exports = {
   router,
   authenticateToken,
+  verifyToken,
   requireAdmin,
   requireSuperAdmin,
   requireOpsOrSuperAdmin,
