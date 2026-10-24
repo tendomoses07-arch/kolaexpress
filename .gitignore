@@ -15,6 +15,7 @@ Thumbs.db
 
 # Supabase CLI local state (migrations in supabase/migrations ARE tracked)
 .supabase/
+
 supabase/.temp/
 
 # SQLite Database Files (Preserve live production data; never overwrite via Git)
