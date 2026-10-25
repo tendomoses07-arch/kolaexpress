@@ -35,6 +35,11 @@ apiRouter.get('/pricing', (req, res) => {
   }
 });
 
+// Health check endpoint for hostinger & load balancers
+apiRouter.get('/health', (req, res) => {
+  res.json({ status: 'ok', time: new Date().toISOString() });
+});
+
 // Mount modular API routes
 apiRouter.use('/auth', require('./routes/auth').router);
 apiRouter.use('/deliveries', require('./routes/deliveries'));
@@ -50,6 +55,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Health check endpoint for hostinger & load balancers
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', time: new Date().toISOString() });
+});
 
 // Mount API routes
 app.use('/api', apiRouter);
@@ -98,31 +108,32 @@ adminApp.use((req, res) => {
   res.sendFile(path.join(__dirname, '../admin/index.html'));
 });
 
-// Start Servers
-const server = app.listen(PORT, () => {
+// Start Server
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`===============================================`);
   console.log(`🚀 KOLA EXPRESS Delivery Service is running!`);
-  console.log(`📍 Public Customer Web App: http://localhost:${PORT}`);
-  console.log(`📍 Environment: Kampala, Uganda (EAT)`);
+  console.log(`📍 Public Customer Web App: http://0.0.0.0:${PORT}`);
+  console.log(`📍 Environment: ${process.env.NODE_ENV || 'production'}`);
   console.log(`💳 Cashless Engine: MTN MoMo & Airtel Money`);
   console.log(`===============================================`);
 });
 
+server.on('error', (err) => {
+  console.error('[SERVER LISTEN ERROR]:', err);
+});
+
 let adminServer = null;
-if (process.env.NODE_ENV !== 'production' && String(ADMIN_PORT) !== String(PORT)) {
+const isCloudOrProd = process.env.NODE_ENV === 'production' || process.env.PORT || process.env.HOSTINGER;
+if (!isCloudOrProd && ADMIN_PORT && String(ADMIN_PORT) !== String(PORT)) {
   try {
-    adminServer = adminApp.listen(ADMIN_PORT, () => {
-      console.log(`===============================================`);
-      console.log(`⚡ KOLA EXPRESS Admin Console is running!`);
-      console.log(`📍 Independent Admin Portal: http://localhost:${ADMIN_PORT}`);
-      console.log(`🛡️ Access Control: Super, Operations & Finance RBAC`);
-      console.log(`===============================================`);
+    adminServer = adminApp.listen(ADMIN_PORT, '0.0.0.0', () => {
+      console.log(`⚡ Standalone Admin Portal on port ${ADMIN_PORT}`);
     });
     adminServer.on('error', (err) => {
-      console.warn(`[Hostinger / Cloud Info] Standalone admin port ${ADMIN_PORT} not bound (${err.message}). Admin portal is fully accessible at /admin on main port.`);
+      console.warn(`[Port ${ADMIN_PORT} Info]: Admin portal accessible at /admin on primary port.`);
     });
   } catch (err) {
-    console.warn(`[Hostinger / Cloud Info] Standalone admin port ${ADMIN_PORT} not bound. Admin portal is fully accessible at /admin on main port.`);
+    console.warn(`[Port ${ADMIN_PORT} Info]: Admin portal accessible at /admin on primary port.`);
   }
 }
 
